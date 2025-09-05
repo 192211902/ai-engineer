@@ -1,0 +1,153 @@
+import smtplib
+import time
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from datetime import datetime
+import logging
+
+class EmailVerificationHandler:
+    def __init__(self, smtp_server, smtp_port, email, password):
+        self.smtp_server = smtp_server
+        self.smtp_port = smtp_port
+        self.email = email
+        self.password = password
+        self.setup_logging()
+    
+    def setup_logging(self):
+        """Set up logging for tracking verification attempts"""
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            handlers=[
+                logging.FileHandler('verification_logs.log'),
+                logging.StreamHandler()
+            ]
+        )
+        self.logger = logging.getLogger(__name__)
+    
+    def send_verification_email(self, user_email, verification_token):
+        """Send verification email to user"""
+        try:
+            msg = MIMEMultipart()
+            msg['From'] = self.email
+            msg['To'] = user_email
+            msg['Subject'] = "Account Verification - Action Required"
+            
+            # Create verification URL (replace with your actual domain)
+            verification_url = f"https://yourapp.com/verify?token={verification_token}"
+            
+            body = f"""
+            Dear User,
+            
+            Thank you for registering with our service. Please click the link below to verify your account:
+            
+            {verification_url}
+            
+            If you didn't request this verification, please ignore this email.
+            
+            This link will expire in 24 hours.
+            
+            Best regards,
+            Support Team
+            """
+            
+            msg.attach(MIMEText(body, 'plain'))
+            
+            # Connect to server and send email
+            with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
+                server.starttls()
+                server.login(self.email, self.password)
+                server.send_message(msg)
+            
+            self.logger.info(f"Verification email sent successfully to {user_email}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to send verification email to {user_email}: {str(e)}")
+            return False
+    
+    def resend_verification(self, user_email, verification_token):
+        """Resend verification email for users who didn't receive it"""
+        self.logger.info(f"Resending verification email to {user_email}")
+        return self.send_verification_email(user_email, verification_token)
+    
+    def check_email_deliverability(self, user_email):
+        """Basic email validation and deliverability check"""
+        import re
+        
+        # Basic email format validation
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        if not re.match(email_pattern, user_email):
+            return False, "Invalid email format"
+        
+        # Check for common typos in domains
+        common_domains = {
+            'gmail.co': 'gmail.com',
+            'yahoo.co': 'yahoo.com',
+            'hotmail.co': 'hotmail.com',
+            'outlook.co': 'outlook.com'
+        }
+        
+        domain = user_email.split('@')[1]
+        if domain in common_domains:
+            suggested_email = user_email.replace(domain, common_domains[domain])
+            return False, f"Did you mean {suggested_email}?"
+        
+        return True, "Email appears valid"
+
+def handle_login_support_ticket():
+    """Handle the specific support ticket about verification email issues"""
+    
+    # Support ticket details
+    subject = "Support needed for login issue"
+    body = "I am facing issues with verifying my account. The verification email never arrived. Can you assist?"
+    
+    print("=== SUPPORT TICKET HANDLER ===")
+    print(f"Subject: {subject}")
+    print(f"Body: {body}")
+    print("="*50)
+    
+    # Simulate user email (in real scenario, this would come from the support ticket)
+    user_email = input("Enter the user's email address: ")
+    
+    # Initialize email handler (replace with your SMTP settings)
+    email_handler = EmailVerificationHandler(
+        smtp_server="smtp.gmail.com",
+        smtp_port=587,
+        email="your-support-email@gmail.com",  # Replace with your email
+        password="your-app-password"  # Replace with your app password
+    )
+    
+    # Check email deliverability
+    is_valid, message = email_handler.check_email_deliverability(user_email)
+    print(f"Email validation: {message}")
+    
+    if not is_valid and "Did you mean" in message:
+        use_suggestion = input(f"{message} Use suggested email? (y/n): ")
+        if use_suggestion.lower() == 'y':
+            user_email = message.split("Did you mean ")[1].rstrip("?")
+    
+    # Generate new verification token (in production, use secure random generation)
+    import uuid
+    new_token = str(uuid.uuid4())
+    
+    # Resend verification email
+    print(f"\nAttempting to resend verification email to {user_email}...")
+    
+    if email_handler.resend_verification(user_email, new_token):
+        print("✅ Verification email resent successfully!")
+        print(f"New verification token: {new_token}")
+        
+        # Log the support interaction
+        with open('support_tickets.log', 'a') as f:
+            f.write(f"{datetime.now()}: Resent verification email to {user_email} - Token: {new_token}\n")
+    else:
+        print("❌ Failed to resend verification email")
+        print("Possible solutions:")
+        print("1. Check spam/junk folder")
+        print("2. Verify email address is correct")
+        print("3. Try with a different email provider")
+        print("4. Contact system administrator")
+
+if __name__ == "__main__":
+    handle_login_support_ticket()
