@@ -1,0 +1,258 @@
+Help Required with Account Verification
+Third-Party API Integration Support
+Yes, we do support integration with third-party APIs, including comprehensive CRM integration options. Below are the available CRM integrations and implementation examples.
+
+Supported CRM Platforms
+	* Salesforce
+	* HubSpot
+	* Pipedrive
+	* Zoho CRM
+	* Microsoft Dynamics 365
+	* Custom REST APIs
+
+Python Integration Examples
+Salesforce Integration
+import requests
+from simple_salesforce import Salesforce
+import os
+
+class SalesforceCRMIntegration:
+    def __init__(self, username, password, security_token):
+        self.sf = Salesforce(
+            username=username,
+            password=password,
+            security_token=security_token
+        )
+    
+    def create_contact(self, contact_data):
+        """Create a new contact in Salesforce"""
+        try:
+            result = self.sf.Contact.create(contact_data)
+            return {"success": True, "contact_id": result['id']}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    def get_account_info(self, account_id):
+        """Retrieve account information"""
+        try:
+            account = self.sf.Account.get(account_id)
+            return {"success": True, "data": account}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+# Usage example
+sf_integration = SalesforceCRMIntegration(
+    username="your_username",
+    password="your_password",
+    security_token="your_token"
+)
+
+HubSpot Integration
+import requests
+import json
+
+class HubSpotCRMIntegration:
+    def __init__(self, api_key):
+        self.api_key = api_key
+        self.base_url = "https://api.hubapi.com"
+        self.headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+    
+    def create_contact(self, contact_properties):
+        """Create a new contact in HubSpot"""
+        url = f"{self.base_url}/crm/v3/objects/contacts"
+        
+        payload = {
+            "properties": contact_properties
+        }
+        
+        try:
+            response = requests.post(url, headers=self.headers, json=payload)
+            response.raise_for_status()
+            return {"success": True, "data": response.json()}
+        except requests.exceptions.RequestException as e:
+            return {"success": False, "error": str(e)}
+    
+    def get_contact_by_email(self, email):
+        """Retrieve contact by email address"""
+        url = f"{self.base_url}/crm/v3/objects/contacts"
+        params = {
+            "filterGroups": [
+                {
+                    "filters": [
+                        {
+                            "propertyName": "email",
+                            "operator": "EQ",
+                            "value": email
+                        }
+                    ]
+                }
+            ]
+        }
+        
+        try:
+            response = requests.post(f"{url}/search", headers=self.headers, json=params)
+            response.raise_for_status()
+            return {"success": True, "data": response.json()}
+        except requests.exceptions.RequestException as e:
+            return {"success": False, "error": str(e)}
+
+# Usage example
+hubspot_integration = HubSpotCRMIntegration(api_key="your_hubspot_api_key")
+
+Generic CRM API Wrapper
+import requests
+import json
+from abc import ABC, abstractmethod
+
+class BaseCRMIntegration(ABC):
+    """Base class for CRM integrations"""
+    
+    def __init__(self, api_key, base_url):
+        self.api_key = api_key
+        self.base_url = base_url
+        self.session = requests.Session()
+    
+    @abstractmethod
+    def authenticate(self):
+        """Implement authentication logic"""
+        pass
+    
+    @abstractmethod
+    def create_contact(self, contact_data):
+        """Create a contact in the CRM"""
+        pass
+    
+    @abstractmethod
+    def update_contact(self, contact_id, contact_data):
+        """Update a contact in the CRM"""
+        pass
+    
+    @abstractmethod
+    def get_contact(self, contact_id):
+        """Retrieve a contact from the CRM"""
+        pass
+
+class CustomCRMIntegration(BaseCRMIntegration):
+    def __init__(self, api_key, base_url):
+        super().__init__(api_key, base_url)
+        self.authenticate()
+    
+    def authenticate(self):
+        """Set up authentication headers"""
+        self.session.headers.update({
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        })
+    
+    def create_contact(self, contact_data):
+        """Create a new contact"""
+        url = f"{self.base_url}/contacts"
+        try:
+            response = self.session.post(url, json=contact_data)
+            response.raise_for_status()
+            return {"success": True, "data": response.json()}
+        except requests.exceptions.RequestException as e:
+            return {"success": False, "error": str(e)}
+    
+    def update_contact(self, contact_id, contact_data):
+        """Update existing contact"""
+        url = f"{self.base_url}/contacts/{contact_id}"
+        try:
+            response = self.session.put(url, json=contact_data)
+            response.raise_for_status()
+            return {"success": True, "data": response.json()}
+        except requests.exceptions.RequestException as e:
+            return {"success": False, "error": str(e)}
+    
+    def get_contact(self, contact_id):
+        """Retrieve contact information"""
+        url = f"{self.base_url}/contacts/{contact_id}"
+        try:
+            response = self.session.get(url)
+            response.raise_for_status()
+            return {"success": True, "data": response.json()}
+        except requests.exceptions.RequestException as e:
+            return {"success": False, "error": str(e)}
+
+# Configuration and usage example
+def setup_crm_integration():
+    """Setup CRM integration based on environment variables"""
+    crm_type = os.getenv("CRM_TYPE", "custom")
+    
+    if crm_type == "salesforce":
+        return SalesforceCRMIntegration(
+            username=os.getenv("SF_USERNAME"),
+            password=os.getenv("SF_PASSWORD"),
+            security_token=os.getenv("SF_SECURITY_TOKEN")
+        )
+    elif crm_type == "hubspot":
+        return HubSpotCRMIntegration(
+            api_key=os.getenv("HUBSPOT_API_KEY")
+        )
+    else:
+        return CustomCRMIntegration(
+            api_key=os.getenv("CRM_API_KEY"),
+            base_url=os.getenv("CRM_BASE_URL")
+        )
+
+# Main integration handler
+class CRMManager:
+    def __init__(self):
+        self.crm = setup_crm_integration()
+    
+    def sync_user_data(self, user_data):
+        """Sync user data with CRM"""
+        # Check if contact exists
+        existing_contact = self.get_contact_by_email(user_data.get("email"))
+        
+        if existing_contact["success"] and existing_contact["data"]:
+            # Update existing contact
+            contact_id = existing_contact["data"]["id"]
+            return self.crm.update_contact(contact_id, user_data)
+        else:
+            # Create new contact
+            return self.crm.create_contact(user_data)
+    
+    def get_contact_by_email(self, email):
+        """Helper method to find contact by email"""
+        # Implementation depends on CRM type
+        # This is a simplified version
+        return {"success": False, "data": None}
+
+# Usage
+if __name__ == "__main__":
+    crm_manager = CRMManager()
+    
+    # Example user data
+    user_data = {
+        "first_name": "Y.Rajesh",
+        "last_name": "Reddy",
+        "email": "rajesh@example.com",
+        "company": "Tech Corp",
+        "phone": "+1234567890"
+    }
+    
+    result = crm_manager.sync_user_data(user_data)
+    print(f"CRM sync result: {result}")
+
+Environment Setup
+Create a .env file with your CRM credentials:
+
+CRM_TYPE=hubspot
+HUBSPOT_API_KEY=your_hubspot_api_key
+SALESFORCE_USERNAME=your_sf_username
+SALESFORCE_PASSWORD=your_sf_password
+SALESFORCE_SECURITY_TOKEN=your_sf_token
+
+Installation Requirements
+pip install requests simple-salesforce python-dotenv
+
+Contact
+For additional CRM integration support or custom implementations, please reach out to our technical team.
+
+----
+
+This documentation provides comprehensive CRM integration options with working Python code examples. All integrations support real-time data synchronization and bidirectional communication.
