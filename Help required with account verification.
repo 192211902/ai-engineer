@@ -1,0 +1,158 @@
+import datetime
+import json
+from typing import Dict, List, Optional
+
+class SupportTicket:
+    def __init__(self, ticket_id: str, subject: str, body: str, priority: str = "medium"):
+        self.ticket_id = ticket_id
+        self.subject = subject
+        self.body = body
+        self.priority = priority
+        self.created_at = datetime.datetime.now()
+        self.status = "open"
+        self.assigned_to = None
+        
+    def to_dict(self) -> Dict:
+        return {
+            "ticket_id": self.ticket_id,
+            "subject": self.subject,
+            "body": self.body,
+            "priority": self.priority,
+            "created_at": self.created_at.isoformat(),
+            "status": self.status,
+            "assigned_to": self.assigned_to
+        }
+
+class BillingErrorHandler:
+    def __init__(self):
+        self.billing_keywords = [
+            "billing error", "charged twice", "double charge", 
+            "incorrect charge", "billing issue", "payment error"
+        ]
+        self.verification_keywords = [
+            "account verification", "verify account", "verification required",
+            "account access", "login issue"
+        ]
+    
+    def analyze_ticket(self, ticket: SupportTicket) -> Dict:
+        """Analyze ticket content and determine appropriate action"""
+        analysis = {
+            "is_billing_issue": False,
+            "is_verification_issue": False,
+            "urgency_level": "medium",
+            "suggested_actions": []
+        }
+        
+        content = (ticket.subject + " " + ticket.body).lower()
+        
+        # Check for billing issues
+        for keyword in self.billing_keywords:
+            if keyword in content:
+                analysis["is_billing_issue"] = True
+                analysis["urgency_level"] = "high"
+                analysis["suggested_actions"].append("escalate_to_billing_team")
+                break
+        
+        # Check for verification issues
+        for keyword in self.verification_keywords:
+            if keyword in content:
+                analysis["is_verification_issue"] = True
+                analysis["suggested_actions"].append("send_verification_email")
+                break
+        
+        # Check for urgency indicators
+        if any(word in content for word in ["urgent", "immediate", "critical", "emergency"]):
+            analysis["urgency_level"] = "critical"
+            analysis["suggested_actions"].append("priority_escalation")
+        
+        return analysis
+    
+    def process_billing_error(self, ticket: SupportTicket) -> Dict:
+        """Process billing error specifically"""
+        return {
+            "action": "billing_correction",
+            "steps": [
+                "Verify customer account",
+                "Check payment history",
+                "Identify duplicate charges",
+                "Process refund if applicable",
+                "Send confirmation email"
+            ],
+            "estimated_resolution_time": "24-48 hours",
+            "department": "billing"
+        }
+
+# Example usage for your specific case
+def create_account_verification_ticket():
+    """Create a ticket for the account verification billing error"""
+    
+    # Your specific ticket data
+    ticket = SupportTicket(
+        ticket_id="AV_" + datetime.datetime.now().strftime("%Y%m%d_%H%M%S"),
+        subject="Help required with account verification",
+        body="There is a billing error where I was charged twice. This needs immediate correction.",
+        priority="high"
+    )
+    
+    # Initialize handler
+    handler = BillingErrorHandler()
+    
+    # Analyze the ticket
+    analysis = handler.analyze_ticket(ticket)
+    
+    # Process if it's a billing error
+    if analysis["is_billing_issue"]:
+        resolution_plan = handler.process_billing_error(ticket)
+    else:
+        resolution_plan = {"action": "standard_support_flow"}
+    
+    return {
+        "ticket": ticket.to_dict(),
+        "analysis": analysis,
+        "resolution_plan": resolution_plan
+    }
+
+# Database simulation for tracking tickets
+class TicketDatabase:
+    def __init__(self):
+        self.tickets: List[SupportTicket] = []
+    
+    def add_ticket(self, ticket: SupportTicket):
+        self.tickets.append(ticket)
+        print(f"Ticket {ticket.ticket_id} added successfully")
+    
+    def get_urgent_tickets(self) -> List[SupportTicket]:
+        return [t for t in self.tickets if "urgent" in t.body.lower() or "immediate" in t.body.lower()]
+    
+    def get_billing_tickets(self) -> List[SupportTicket]:
+        billing_keywords = ["billing", "charged", "payment", "refund"]
+        return [t for t in self.tickets 
+                if any(keyword in t.body.lower() for keyword in billing_keywords)]
+
+# Main execution
+if __name__ == "__main__":
+    # Create and process your specific ticket
+    ticket_data = create_account_verification_ticket()
+    
+    print("=== TICKET PROCESSING RESULT ===")
+    print(f"Ticket ID: {ticket_data['ticket']['ticket_id']}")
+    print(f"Subject: {ticket_data['ticket']['subject']}")
+    print(f"Priority: {ticket_data['ticket']['priority']}")
+    print(f"Status: {ticket_data['ticket']['status']}")
+    
+    print("\n=== ANALYSIS ===")
+    analysis = ticket_data['analysis']
+    print(f"Billing Issue: {analysis['is_billing_issue']}")
+    print(f"Verification Issue: {analysis['is_verification_issue']}")
+    print(f"Urgency Level: {analysis['urgency_level']}")
+    print(f"Suggested Actions: {', '.join(analysis['suggested_actions'])}")
+    
+    print("\n=== RESOLUTION PLAN ===")
+    plan = ticket_data['resolution_plan']
+    if 'steps' in plan:
+        print(f"Action: {plan['action']}")
+        print("Steps:")
+        for i, step in enumerate(plan['steps'], 1):
+            print(f"  {i}. {step}")
+        print(f"Estimated Resolution: {plan['estimated_resolution_time']}")
+        print(f"Department: {plan['department']}")
