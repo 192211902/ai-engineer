@@ -1,0 +1,214 @@
+#!/usr/bin/env python3
+"""
+Critical Server Downtime Management System
+Subject: Critical help needed for downtime
+Body: Our servers are down, and we need immediate support. This is highly critical.
+"""
+
+import requests
+import smtplib
+import time
+import logging
+import json
+from datetime import datetime
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from typing import List, Dict
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('server_downtime.log'),
+        logging.StreamHandler()
+    ]
+)
+
+class ServerDowntimeManager:
+    def __init__(self, config: Dict):
+        self.config = config
+        self.servers = config.get('servers', [])
+        self.email_config = config.get('email', {})
+        self.alert_contacts = config.get('alert_contacts', [])
+        
+    def check_server_status(self, server_url: str, timeout: int = 10) -> Dict:
+        """Check if a server is responding"""
+        try:
+            response = requests.get(server_url, timeout=timeout)
+            return {
+                'url': server_url,
+                'status': 'UP' if response.status_code == 200 else 'DOWN',
+                'status_code': response.status_code,
+                'response_time': response.elapsed.total_seconds(),
+                'timestamp': datetime.now().isoformat()
+            }
+        except requests.exceptions.RequestException as e:
+            logging.error(f"Server {server_url} is DOWN: {str(e)}")
+            return {
+                'url': server_url,
+                'status': 'DOWN',
+                'error': str(e),
+                'timestamp': datetime.now().isoformat()
+            }
+    
+    def send_critical_alert(self, down_servers: List[Dict]):
+        """Send critical downtime alert via email"""
+        if not self.email_config or not down_servers:
+            return
+            
+        try:
+            msg = MIMEMultipart()
+            msg['From'] = self.email_config['from']
+            msg['To'] = ', '.join(self.alert_contacts)
+            msg['Subject'] = "🚨 CRITICAL: Server Downtime Alert"
+            
+            # Create alert body
+            alert_body = self.create_alert_message(down_servers)
+            msg.attach(MIMEText(alert_body, 'html'))
+            
+            # Send email
+            with smtplib.SMTP(self.email_config['smtp_server'], self.email_config['port']) as server:
+                if self.email_config.get('use_tls'):
+                    server.starttls()
+                server.login(self.email_config['username'], self.email_config['password'])
+                server.send_message(msg)
+                
+            logging.info("Critical alert sent successfully")
+            
+        except Exception as e:
+            logging.error(f"Failed to send alert: {str(e)}")
+    
+    def create_alert_message(self, down_servers: List[Dict]) -> str:
+        """Create formatted alert message"""
+        html_template = """
+        <html>
+        <body>
+        <h2 style="color: red;">🚨 CRITICAL SERVER DOWNTIME ALERT</h2>
+        <p><strong>Timestamp:</strong> {timestamp}</p>
+        <p><strong>Severity:</strong> CRITICAL</p>
+        <p><strong>Message:</strong> Our servers are down, and we need immediate support. This is highly critical.</p>
+        
+        <h3>Affected Servers:</h3>
+        <table border="1" style="border-collapse: collapse; width: 100%;">
+        <tr>
+            <th style="padding: 8px; background-color: #f2f2f2;">Server URL</th>
+            <th style="padding: 8px; background-color: #f2f2f2;">Status</th>
+            <th style="padding: 8px; background-color: #f2f2f2;">Error</th>
+            <th style="padding: 8px; background-color: #f2f2f2;">Last Check</th>
+        </tr>
+        {server_rows}
+        </table>
+        
+        <h3>Immediate Actions Required:</h3>
+        <ul>
+            <li>Check server hardware and network connectivity</li>
+            <li>Review server logs for critical errors</li>
+            <li>Verify database connections</li>
+            <li>Contact hosting provider if necessary</li>
+            <li>Implement emergency backup procedures</li>
+        </ul>
+        
+        <p style="color: red;"><strong>This is an automated alert. Please respond immediately.</strong></p>
+        </body>
+        </html>
+        """
+        
+        server_rows = ""
+        for server in down_servers:
+            server_rows += f"""
+            <tr>
+                <td style="padding: 8px;">{server['url']}</td>
+                <td style="padding: 8px; color: red;">{server['status']}</td>
+                <td style="padding: 8px;">{server.get('error', 'N/A')}</td>
+                <td style="padding: 8px;">{server['timestamp']}</td>
+            </tr>
+            """
+        
+        return html_template.format(
+            timestamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            server_rows=server_rows
+        )
+    
+    def monitor_servers(self):
+        """Main monitoring loop"""
+        logging.info("Starting critical server monitoring...")
+        
+        down_servers = []
+        for server in self.servers:
+            status = self.check_server_status(server)
+            if status['status'] == 'DOWN':
+                down_servers.append(status)
+                logging.critical(f"CRITICAL: Server {server} is DOWN!")
+        
+        if down_servers:
+            logging.critical(f"TOTAL SERVERS DOWN: {len(down_servers)}")
+            self.send_critical_alert(down_servers)
+            self.execute_emergency_procedures()
+        else:
+            logging.info("All servers are operational")
+    
+    def execute_emergency_procedures(self):
+        """Execute emergency response procedures"""
+        logging.info("Executing emergency procedures...")
+        
+        # Log the incident
+        incident_log = {
+            'timestamp': datetime.now().isoformat(),
+            'incident_type': 'CRITICAL_DOWNTIME',
+            'status': 'ACTIVE',
+            'response_initiated': True
+        }
+        
+        with open('incident_log.json', 'a') as f:
+            f.write(json.dumps(incident_log) + '\n')
+        
+        # Additional emergency procedures can be added here
+        logging.info("Emergency procedures executed")
+
+# Configuration
+CONFIG = {
+    'servers': [
+        'https://your-main-server.com',
+        'https://your-api-server.com',
+        'https://your-database-server.com'
+    ],
+    'email': {
+        'smtp_server': 'smtp.gmail.com',
+        'port': 587,
+        'username': 'your-email@gmail.com',
+        'password': 'your-app-password',
+        'from': 'your-email@gmail.com',
+        'use_tls': True
+    },
+    'alert_contacts': [
+        'admin@company.com',
+        'support@company.com',
+        'emergency@company.com'
+    ]
+}
+
+def main():
+    """Main function for immediate downtime response"""
+    print("🚨 CRITICAL SERVER DOWNTIME MANAGEMENT SYSTEM")
+    print("=" * 50)
+    
+    manager = ServerDowntimeManager(CONFIG)
+    
+    # Immediate server check
+    manager.monitor_servers()
+    
+    # Continuous monitoring (optional)
+    monitor_continuously = input("Continue monitoring? (y/n): ").lower() == 'y'
+    
+    if monitor_continuously:
+        while True:
+            try:
+                manager.monitor_servers()
+                time.sleep(60)  # Check every minute
+            except KeyboardInterrupt:
+                logging.info("Monitoring stopped by user")
+                break
+
+if __name__ == "__main__":
+    main()
