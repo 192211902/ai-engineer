@@ -1,0 +1,132 @@
+import datetime
+import json
+from dataclasses import dataclass
+from typing import List, Optional
+
+@dataclass
+class BillingQuery:
+    """Data class to represent a billing query"""
+    subject: str
+    body: str
+    customer_id: str
+    timestamp: datetime.datetime
+    priority: str = "high"
+    status: str = "open"
+
+@dataclass
+class Transaction:
+    """Data class to represent a transaction"""
+    transaction_id: str
+    customer_id: str
+    amount: float
+    timestamp: datetime.datetime
+    description: str
+
+class BillingErrorHandler:
+    """Handle billing errors and duplicate charges"""
+    
+    def __init__(self):
+        self.queries: List[BillingQuery] = []
+        self.transactions: List[Transaction] = []
+    
+    def create_query(self, subject: str, body: str, customer_id: str) -> BillingQuery:
+        """Create a new billing query"""
+        query = BillingQuery(
+            subject=subject,
+            body=body,
+            customer_id=customer_id,
+            timestamp=datetime.datetime.now(),
+            priority="high" if "immediate" in body.lower() else "medium"
+        )
+        self.queries.append(query)
+        return query
+    
+    def find_duplicate_charges(self, customer_id: str, 
+                              time_window_hours: int = 24) -> List[Transaction]:
+        """Find potential duplicate charges for a customer"""
+        customer_transactions = [
+            t for t in self.transactions 
+            if t.customer_id == customer_id
+        ]
+        
+        duplicates = []
+        for i, transaction in enumerate(customer_transactions):
+            for j, other_transaction in enumerate(customer_transactions[i+1:], i+1):
+                time_diff = abs((transaction.timestamp - other_transaction.timestamp).total_seconds())
+                
+                # Check if transactions are within time window and same amount
+                if (time_diff <= time_window_hours * 3600 and 
+                    transaction.amount == other_transaction.amount):
+                    duplicates.extend([transaction, other_transaction])
+        
+        return list(set(duplicates))  # Remove duplicates from the list
+    
+    def process_billing_error(self, customer_id: str) -> dict:
+        """Process a billing error and return resolution details"""
+        duplicates = self.find_duplicate_charges(customer_id)
+        
+        if duplicates:
+            refund_amount = sum(t.amount for t in duplicates[1::2])  # Refund every second duplicate
+            resolution = {
+                "status": "duplicate_found",
+                "duplicate_transactions": [t.transaction_id for t in duplicates],
+                "refund_amount": refund_amount,
+                "resolution_time": datetime.datetime.now().isoformat(),
+                "next_steps": [
+                    "Process refund within 3-5 business days",
+                    "Send confirmation email to customer",
+                    "Update billing records"
+                ]
+            }
+        else:
+            resolution = {
+                "status": "no_duplicates_found",
+                "message": "Manual review required",
+                "next_steps": [
+                    "Escalate to billing specialist",
+                    "Request transaction details from customer",
+                    "Review payment gateway logs"
+                ]
+            }
+        
+        return resolution
+
+# Example usage
+def main():
+    # Initialize the billing handler
+    handler = BillingErrorHandler()
+    
+    # Create the query from the user's request
+    query = handler.create_query(
+        subject="Query about product pricing",
+        body="There is a billing error where I was charged twice. This needs immediate correction.",
+        customer_id="CUST_12345"
+    )
+    
+    # Add some sample transactions (in real scenario, these would come from database)
+    handler.transactions = [
+        Transaction("TXN_001", "CUST_12345", 99.99, 
+                   datetime.datetime.now() - datetime.timedelta(hours=1), 
+                   "Premium Plan Subscription"),
+        Transaction("TXN_002", "CUST_12345", 99.99, 
+                   datetime.datetime.now() - datetime.timedelta(minutes=30), 
+                   "Premium Plan Subscription"),
+        Transaction("TXN_003", "CUST_67890", 49.99, 
+                   datetime.datetime.now() - datetime.timedelta(hours=2), 
+                   "Basic Plan Subscription")
+    ]
+    
+    # Process the billing error
+    resolution = handler.process_billing_error("CUST_12345")
+    
+    # Display results
+    print("=== BILLING ERROR QUERY PROCESSED ===")
+    print(f"Subject: {query.subject}")
+    print(f"Priority: {query.priority}")
+    print(f"Status: {query.status}")
+    print(f"Timestamp: {query.timestamp}")
+    print("\n=== RESOLUTION DETAILS ===")
+    print(json.dumps(resolution, indent=2))
+
+if __name__ == "__main__":
+    main()
