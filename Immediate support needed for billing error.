@@ -1,0 +1,226 @@
+"""
+Billing Error Support System
+Handles immediate support requests for billing discrepancies and errors
+"""
+
+import datetime
+import logging
+from dataclasses import dataclass
+from typing import List, Optional
+from enum import Enum
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+class Priority(Enum):
+    LOW = 1
+    MEDIUM = 2
+    HIGH = 3
+    CRITICAL = 4
+
+class BillingErrorType(Enum):
+    OVERCHARGE = "overcharge"
+    UNDERCHARGE = "undercharge"
+    DUPLICATE_CHARGE = "duplicate_charge"
+    MISSING_PAYMENT = "missing_payment"
+    INCORRECT_TAX = "incorrect_tax"
+    SUBSCRIPTION_ERROR = "subscription_error"
+
+@dataclass
+class BillingError:
+    """Represents a billing error case"""
+    ticket_id: str
+    customer_id: str
+    error_type: BillingErrorType
+    amount_disputed: float
+    description: str
+    priority: Priority
+    timestamp: datetime.datetime
+    resolved: bool = False
+    resolution_notes: Optional[str] = None
+
+class BillingErrorHandler:
+    """Handles billing error support requests"""
+    
+    def __init__(self):
+        self.errors: List[BillingError] = []
+        self.ticket_counter = 1000
+    
+    def create_ticket(self, customer_id: str, error_type: BillingErrorType, 
+                     amount_disputed: float, description: str) -> str:
+        """Create a new billing error ticket"""
+        
+        # Determine priority based on amount and error type
+        priority = self._determine_priority(amount_disputed, error_type)
+        
+        # Generate unique ticket ID
+        ticket_id = f"BE-{self.ticket_counter}"
+        self.ticket_counter += 1
+        
+        # Create billing error record
+        billing_error = BillingError(
+            ticket_id=ticket_id,
+            customer_id=customer_id,
+            error_type=error_type,
+            amount_disputed=amount_disputed,
+            description=description,
+            priority=priority,
+            timestamp=datetime.datetime.now()
+        )
+        
+        self.errors.append(billing_error)
+        
+        logger.info(f"Created billing error ticket {ticket_id} for customer {customer_id}")
+        
+        # Send immediate notification for critical issues
+        if priority == Priority.CRITICAL:
+            self._send_critical_alert(billing_error)
+        
+        return ticket_id
+    
+    def _determine_priority(self, amount: float, error_type: BillingErrorType) -> Priority:
+        """Determine priority based on amount and error type"""
+        
+        # Critical priority for high amounts or duplicate charges
+        if amount > 1000 or error_type == BillingErrorType.DUPLICATE_CHARGE:
+            return Priority.CRITICAL
+        
+        # High priority for significant amounts
+        elif amount > 500:
+            return Priority.HIGH
+        
+        # Medium priority for moderate amounts
+        elif amount > 100:
+            return Priority.MEDIUM
+        
+        # Low priority for small amounts
+        else:
+            return Priority.LOW
+    
+    def _send_critical_alert(self, error: BillingError):
+        """Send immediate alert for critical billing errors"""
+        alert_message = f"""
+        CRITICAL BILLING ERROR ALERT
+        ============================
+        Ticket ID: {error.ticket_id}
+        Customer: {error.customer_id}
+        Error Type: {error.error_type.value}
+        Amount: ${error.amount_disputed:.2f}
+        Description: {error.description}
+        Time: {error.timestamp.strftime('%Y-%m-%d %H:%M:%S')}
+        
+        IMMEDIATE ACTION REQUIRED!
+        """
+        
+        logger.critical(alert_message)
+        # In production, this would send email/SMS/Slack notification
+        print(alert_message)
+    
+    def resolve_ticket(self, ticket_id: str, resolution_notes: str) -> bool:
+        """Resolve a billing error ticket"""
+        
+        for error in self.errors:
+            if error.ticket_id == ticket_id:
+                error.resolved = True
+                error.resolution_notes = resolution_notes
+                logger.info(f"Resolved ticket {ticket_id}")
+                return True
+        
+        logger.warning(f"Ticket {ticket_id} not found")
+        return False
+    
+    def get_pending_tickets(self, priority_filter: Optional[Priority] = None) -> List[BillingError]:
+        """Get all pending tickets, optionally filtered by priority"""
+        
+        pending = [error for error in self.errors if not error.resolved]
+        
+        if priority_filter:
+            pending = [error for error in pending if error.priority == priority_filter]
+        
+        # Sort by priority and timestamp
+        pending.sort(key=lambda x: (x.priority.value, x.timestamp), reverse=True)
+        
+        return pending
+    
+    def generate_report(self) -> str:
+        """Generate a billing error support report"""
+        
+        total_errors = len(self.errors)
+        resolved_errors = len([e for e in self.errors if e.resolved])
+        pending_errors = total_errors - resolved_errors
+        
+        # Calculate total disputed amount
+        total_disputed = sum(error.amount_disputed for error in self.errors)
+        
+        # Priority breakdown
+        priority_counts = {}
+        for priority in Priority:
+            count = len([e for e in self.errors if e.priority == priority and not e.resolved])
+            priority_counts[priority.name] = count
+        
+        report = f"""
+        BILLING ERROR SUPPORT REPORT
+        ============================
+        Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+        
+        Summary:
+        - Total Tickets: {total_errors}
+        - Resolved: {resolved_errors}
+        - Pending: {pending_errors}
+        - Total Disputed Amount: ${total_disputed:.2f}
+        
+        Pending Tickets by Priority:
+        - Critical: {priority_counts['CRITICAL']}
+        - High: {priority_counts['HIGH']}
+        - Medium: {priority_counts['MEDIUM']}
+        - Low: {priority_counts['LOW']}
+        
+        Resolution Rate: {(resolved_errors/total_errors*100):.1f}%
+        """
+        
+        return report
+
+def main():
+    """Example usage of the billing error support system"""
+    
+    # Initialize the handler
+    handler = BillingErrorHandler()
+    
+    # Example: Customer reports overcharge
+    ticket1 = handler.create_ticket(
+        customer_id="CUST-12345",
+        error_type=BillingErrorType.OVERCHARGE,
+        amount_disputed=250.00,
+        description="Charged twice for monthly subscription"
+    )
+    
+    # Example: Critical duplicate charge
+    ticket2 = handler.create_ticket(
+        customer_id="CUST-67890",
+        error_type=BillingErrorType.DUPLICATE_CHARGE,
+        amount_disputed=1500.00,
+        description="Annual subscription charged multiple times"
+    )
+    
+    # Example: Small tax error
+    ticket3 = handler.create_ticket(
+        customer_id="CUST-11111",
+        error_type=BillingErrorType.INCORRECT_TAX,
+        amount_disputed=15.50,
+        description="Wrong tax rate applied"
+    )
+    
+    # Get pending critical tickets
+    critical_tickets = handler.get_pending_tickets(Priority.CRITICAL)
+    print(f"\nCritical tickets requiring immediate attention: {len(critical_tickets)}")
+    
+    # Resolve a ticket
+    handler.resolve_ticket(ticket3, "Tax rate corrected and refund processed")
+    
+    # Generate and display report
+    report = handler.generate_report()
+    print(report)
+
+if __name__ == "__main__":
+    main()
