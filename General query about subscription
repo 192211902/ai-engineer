@@ -1,0 +1,324 @@
+import java.time.LocalDateTime;
+import java.time.Period;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+
+// Subscription Plan Enum
+enum SubscriptionPlan {
+    BASIC(9.99, Period.ofMonths(1), "Basic Plan"),
+    PREMIUM(19.99, Period.ofMonths(1), "Premium Plan"),
+    ENTERPRISE(99.99, Period.ofMonths(1), "Enterprise Plan"),
+    ANNUAL_BASIC(99.99, Period.ofYears(1), "Annual Basic Plan"),
+    ANNUAL_PREMIUM(199.99, Period.ofYears(1), "Annual Premium Plan");
+    
+    private final double price;
+    private final Period billingCycle;
+    private final String displayName;
+    
+    SubscriptionPlan(double price, Period billingCycle, String displayName) {
+        this.price = price;
+        this.billingCycle = billingCycle;
+        this.displayName = displayName;
+    }
+    
+    public double getPrice() { return price; }
+    public Period getBillingCycle() { return billingCycle; }
+    public String getDisplayName() { return displayName; }
+}
+
+// Subscription Status Enum
+enum SubscriptionStatus {
+    ACTIVE, CANCELLED, EXPIRED, PENDING, SUSPENDED
+}
+
+// User Class
+class User {
+    private String userId;
+    private String email;
+    private String name;
+    private LocalDateTime createdAt;
+    
+    public User(String userId, String email, String name) {
+        this.userId = userId;
+        this.email = email;
+        this.name = name;
+        this.createdAt = LocalDateTime.now();
+    }
+    
+    // Getters
+    public String getUserId() { return userId; }
+    public String getEmail() { return email; }
+    public String getName() { return name; }
+    public LocalDateTime getCreatedAt() { return createdAt; }
+}
+
+// Subscription Class
+class Subscription {
+    private String subscriptionId;
+    private String userId;
+    private SubscriptionPlan plan;
+    private SubscriptionStatus status;
+    private LocalDateTime startDate;
+    private LocalDateTime endDate;
+    private LocalDateTime nextBillingDate;
+    private boolean autoRenew;
+    private double totalPaid;
+    private List<String> transactionHistory;
+    
+    public Subscription(String userId, SubscriptionPlan plan) {
+        this.subscriptionId = UUID.randomUUID().toString();
+        this.userId = userId;
+        this.plan = plan;
+        this.status = SubscriptionStatus.PENDING;
+        this.startDate = LocalDateTime.now();
+        this.endDate = startDate.plus(plan.getBillingCycle());
+        this.nextBillingDate = endDate;
+        this.autoRenew = true;
+        this.totalPaid = 0.0;
+        this.transactionHistory = new ArrayList<>();
+    }
+    
+    // Getters and Setters
+    public String getSubscriptionId() { return subscriptionId; }
+    public String getUserId() { return userId; }
+    public SubscriptionPlan getPlan() { return plan; }
+    public SubscriptionStatus getStatus() { return status; }
+    public void setStatus(SubscriptionStatus status) { this.status = status; }
+    public LocalDateTime getStartDate() { return startDate; }
+    public LocalDateTime getEndDate() { return endDate; }
+    public void setEndDate(LocalDateTime endDate) { this.endDate = endDate; }
+    public LocalDateTime getNextBillingDate() { return nextBillingDate; }
+    public void setNextBillingDate(LocalDateTime nextBillingDate) { this.nextBillingDate = nextBillingDate; }
+    public boolean isAutoRenew() { return autoRenew; }
+    public void setAutoRenew(boolean autoRenew) { this.autoRenew = autoRenew; }
+    public double getTotalPaid() { return totalPaid; }
+    public void addPayment(double amount) { this.totalPaid += amount; }
+    public List<String> getTransactionHistory() { return transactionHistory; }
+    public void addTransaction(String transaction) { this.transactionHistory.add(transaction); }
+    
+    public boolean isActive() {
+        return status == SubscriptionStatus.ACTIVE && LocalDateTime.now().isBefore(endDate);
+    }
+    
+    public boolean isExpired() {
+        return LocalDateTime.now().isAfter(endDate);
+    }
+}
+
+// Payment Interface
+interface PaymentProcessor {
+    boolean processPayment(String userId, double amount, String paymentMethod);
+    String getTransactionId();
+}
+
+// Simple Payment Processor Implementation
+class SimplePaymentProcessor implements PaymentProcessor {
+    private String lastTransactionId;
+    
+    @Override
+    public boolean processPayment(String userId, double amount, String paymentMethod) {
+        // Simulate payment processing
+        this.lastTransactionId = "TXN-" + UUID.randomUUID().toString().substring(0, 8);
+        System.out.println("Processing payment of $" + amount + " for user " + userId);
+        // In real implementation, integrate with payment gateway
+        return Math.random() > 0.1; // 90% success rate simulation
+    }
+    
+    @Override
+    public String getTransactionId() {
+        return lastTransactionId;
+    }
+}
+
+// Main Subscription Service
+class SubscriptionService {
+    private Map<String, User> users;
+    private Map<String, Subscription> subscriptions;
+    private Map<String, List<String>> userSubscriptions;
+    private PaymentProcessor paymentProcessor;
+    
+    public SubscriptionService(PaymentProcessor paymentProcessor) {
+        this.users = new ConcurrentHashMap<>();
+        this.subscriptions = new ConcurrentHashMap<>();
+        this.userSubscriptions = new ConcurrentHashMap<>();
+        this.paymentProcessor = paymentProcessor;
+    }
+    
+    // User Management
+    public User createUser(String email, String name) {
+        String userId = UUID.randomUUID().toString();
+        User user = new User(userId, email, name);
+        users.put(userId, user);
+        userSubscriptions.put(userId, new ArrayList<>());
+        System.out.println("User created: " + name + " (" + email + ")");
+        return user;
+    }
+    
+    public User getUser(String userId) {
+        return users.get(userId);
+    }
+    
+    // Subscription Management
+    public Subscription createSubscription(String userId, SubscriptionPlan plan) {
+        if (!users.containsKey(userId)) {
+            throw new IllegalArgumentException("User not found");
+        }
+        
+        Subscription subscription = new Subscription(userId, plan);
+        subscriptions.put(subscription.getSubscriptionId(), subscription);
+        userSubscriptions.get(userId).add(subscription.getSubscriptionId());
+        
+        System.out.println("Subscription created: " + plan.getDisplayName() + " for user " + userId);
+        return subscription;
+    }
+    
+    public boolean activateSubscription(String subscriptionId, String paymentMethod) {
+        Subscription subscription = subscriptions.get(subscriptionId);
+        if (subscription == null) {
+            return false;
+        }
+        
+        double amount = subscription.getPlan().getPrice();
+        boolean paymentSuccess = paymentProcessor.processPayment(
+            subscription.getUserId(), amount, paymentMethod);
+        
+        if (paymentSuccess) {
+            subscription.setStatus(SubscriptionStatus.ACTIVE);
+            subscription.addPayment(amount);
+            subscription.addTransaction("Activation payment: $" + amount + " - " + 
+                paymentProcessor.getTransactionId());
+            System.out.println("Subscription activated: " + subscriptionId);
+            return true;
+        } else {
+            System.out.println("Payment failed for subscription: " + subscriptionId);
+            return false;
+        }
+    }
+    
+    public boolean renewSubscription(String subscriptionId) {
+        Subscription subscription = subscriptions.get(subscriptionId);
+        if (subscription == null || !subscription.isAutoRenew()) {
+            return false;
+        }
+        
+        double amount = subscription.getPlan().getPrice();
+        boolean paymentSuccess = paymentProcessor.processPayment(
+            subscription.getUserId(), amount, "auto-renewal");
+        
+        if (paymentSuccess) {
+            LocalDateTime newEndDate = subscription.getEndDate().plus(
+                subscription.getPlan().getBillingCycle());
+            subscription.setEndDate(newEndDate);
+            subscription.setNextBillingDate(newEndDate);
+            subscription.addPayment(amount);
+            subscription.addTransaction("Renewal payment: $" + amount + " - " + 
+                paymentProcessor.getTransactionId());
+            System.out.println("Subscription renewed: " + subscriptionId);
+            return true;
+        } else {
+            subscription.setStatus(SubscriptionStatus.SUSPENDED);
+            System.out.println("Renewal failed, subscription suspended: " + subscriptionId);
+            return false;
+        }
+    }
+    
+    public boolean cancelSubscription(String subscriptionId) {
+        Subscription subscription = subscriptions.get(subscriptionId);
+        if (subscription == null) {
+            return false;
+        }
+        
+        subscription.setStatus(SubscriptionStatus.CANCELLED);
+        subscription.setAutoRenew(false);
+        System.out.println("Subscription cancelled: " + subscriptionId);
+        return true;
+    }
+    
+    public Subscription getSubscription(String subscriptionId) {
+        return subscriptions.get(subscriptionId);
+    }
+    
+    public List<Subscription> getUserSubscriptions(String userId) {
+        List<String> subscriptionIds = userSubscriptions.get(userId);
+        if (subscriptionIds == null) {
+            return new ArrayList<>();
+        }
+        
+        return subscriptionIds.stream()
+            .map(id -> subscriptions.get(id))
+            .filter(Objects::nonNull)
+            .collect(ArrayList::new, ArrayList::add, ArrayList::addAll);
+    }
+    
+    public List<Subscription> getActiveSubscriptions(String userId) {
+        return getUserSubscriptions(userId).stream()
+            .filter(Subscription::isActive)
+            .collect(ArrayList::new, ArrayList::add, ArrayList::addAll);
+    }
+    
+    // Utility Methods
+    public void processAllRenewals() {
+        LocalDateTime now = LocalDateTime.now();
+        subscriptions.values().stream()
+            .filter(s -> s.getStatus() == SubscriptionStatus.ACTIVE)
+            .filter(s -> s.isAutoRenew())
+            .filter(s -> s.getNextBillingDate().isBefore(now.plusDays(1)))
+            .forEach(s -> renewSubscription(s.getSubscriptionId()));
+    }
+    
+    public void expireOldSubscriptions() {
+        LocalDateTime now = LocalDateTime.now();
+        subscriptions.values().stream()
+            .filter(s -> s.getStatus() == SubscriptionStatus.ACTIVE)
+            .filter(Subscription::isExpired)
+            .forEach(s -> {
+                s.setStatus(SubscriptionStatus.EXPIRED);
+                System.out.println("Subscription expired: " + s.getSubscriptionId());
+            });
+    }
+}
+
+// Demo/Test Class
+public class SubscriptionDemo {
+    public static void main(String[] args) {
+        // Initialize service
+        PaymentProcessor paymentProcessor = new SimplePaymentProcessor();
+        SubscriptionService service = new SubscriptionService(paymentProcessor);
+        
+        // Create users
+        User user1 = service.createUser("john.doe@example.com", "John Doe");
+        User user2 = service.createUser("jane.smith@example.com", "Jane Smith");
+        
+        // Create subscriptions
+        Subscription basicSub = service.createSubscription(user1.getUserId(), SubscriptionPlan.BASIC);
+        Subscription premiumSub = service.createSubscription(user2.getUserId(), SubscriptionPlan.PREMIUM);
+        
+        // Activate subscriptions
+        service.activateSubscription(basicSub.getSubscriptionId(), "credit-card");
+        service.activateSubscription(premiumSub.getSubscriptionId(), "paypal");
+        
+        // Display user subscriptions
+        System.out.println("\n--- User Subscriptions ---");
+        service.getUserSubscriptions(user1.getUserId()).forEach(sub -> 
+            System.out.println("User: " + user1.getName() + 
+                " | Plan: " + sub.getPlan().getDisplayName() + 
+                " | Status: " + sub.getStatus() + 
+                " | Total Paid: $" + sub.getTotalPaid()));
+        
+        service.getUserSubscriptions(user2.getUserId()).forEach(sub -> 
+            System.out.println("User: " + user2.getName() + 
+                " | Plan: " + sub.getPlan().getDisplayName() + 
+                " | Status: " + sub.getStatus() + 
+                " | Total Paid: $" + sub.getTotalPaid()));
+        
+        // Test cancellation
+        System.out.println("\n--- Testing Cancellation ---");
+        service.cancelSubscription(basicSub.getSubscriptionId());
+        
+        // Process renewals
+        System.out.println("\n--- Processing Renewals ---");
+        service.processAllRenewals();
+        
+        System.out.println("\nDemo completed!");
+    }
+}
