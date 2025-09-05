@@ -1,0 +1,148 @@
+import smtplib
+import json
+import requests
+from datetime import datetime
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+
+class AccountVerificationHelper:
+    def __init__(self, config):
+        self.config = config
+        self.verification_status = "pending"
+        
+    def send_verification_alert(self, urgency_level="high"):
+        """Send urgent verification alert email"""
+        try:
+            msg = MIMEMultipart()
+            msg['From'] = self.config['email']['sender']
+            msg['To'] = self.config['email']['support_team']
+            msg['Subject'] = f"URGENT: Account Verification Required - System Inaccessible"
+            
+            body = f"""
+            URGENT VERIFICATION REQUEST
+            
+            Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+            User: Y.Rajesh Reddy
+            Issue: System completely inaccessible due to account verification
+            Impact: Operations affected
+            Priority: {urgency_level.upper()}
+            
+            Immediate action required to restore system access.
+            
+            Best regards,
+            Automated Alert System
+            """
+            
+            msg.attach(MIMEText(body, 'plain'))
+            
+            server = smtplib.SMTP(self.config['smtp']['host'], self.config['smtp']['port'])
+            server.starttls()
+            server.login(self.config['email']['sender'], self.config['email']['password'])
+            server.send_message(msg)
+            server.quit()
+            
+            print("Urgent verification alert sent successfully")
+            return True
+            
+        except Exception as e:
+            print(f"Failed to send alert: {str(e)}")
+            return False
+    
+    def check_system_status(self, system_url):
+        """Check if system is accessible"""
+        try:
+            response = requests.get(system_url, timeout=10)
+            if response.status_code == 200:
+                return "accessible"
+            elif response.status_code == 401:
+                return "verification_required"
+            else:
+                return "error"
+        except requests.exceptions.RequestException:
+            return "unreachable"
+    
+    def log_verification_issue(self, issue_details):
+        """Log verification issues for tracking"""
+        log_entry = {
+            "timestamp": datetime.now().isoformat(),
+            "user": "Y.Rajesh Reddy",
+            "issue_type": "account_verification",
+            "severity": "urgent",
+            "details": issue_details,
+            "status": self.verification_status
+        }
+        
+        try:
+            with open("verification_issues.json", "a") as f:
+                f.write(json.dumps(log_entry) + "\n")
+            print("Issue logged successfully")
+        except Exception as e:
+            print(f"Failed to log issue: {str(e)}")
+    
+    def create_support_ticket(self, api_endpoint, api_key):
+        """Create automated support ticket"""
+        ticket_data = {
+            "subject": "URGENT: Help required with account verification",
+            "description": "This is urgent – our system is completely inaccessible, and this is affecting our operations. Account verification is blocking access.",
+            "priority": "urgent",
+            "category": "account_verification",
+            "reporter": "Y.Rajesh Reddy",
+            "created_at": datetime.now().isoformat()
+        }
+        
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        try:
+            response = requests.post(api_endpoint, 
+                                   json=ticket_data, 
+                                   headers=headers)
+            
+            if response.status_code == 201:
+                ticket_id = response.json().get('id')
+                print(f"Support ticket created successfully: {ticket_id}")
+                return ticket_id
+            else:
+                print(f"Failed to create ticket: {response.status_code}")
+                return None
+                
+        except Exception as e:
+            print(f"Error creating support ticket: {str(e)}")
+            return None
+
+# Example usage
+if __name__ == "__main__":
+    # Configuration
+    config = {
+        "email": {
+            "sender": "alerts@yourcompany.com",
+            "password": "your_app_password",
+            "support_team": "support@yourcompany.com"
+        },
+        "smtp": {
+            "host": "smtp.gmail.com",
+            "port": 587
+        }
+    }
+    
+    # Initialize helper
+    verifier = AccountVerificationHelper(config)
+    
+    # Check system status
+    system_status = verifier.check_system_status("https://your-system.com")
+    print(f"System status: {system_status}")
+    
+    # Log the issue
+    verifier.log_verification_issue({
+        "description": "System inaccessible due to account verification",
+        "impact": "operations_blocked",
+        "user_action": "attempting_verification"
+    })
+    
+    # Send urgent alert
+    verifier.send_verification_alert("critical")
+    
+    # Create support ticket (if you have API access)
+    # ticket_id = verifier.create_support_ticket("https://api.support.com/tickets", "your_api_key")
