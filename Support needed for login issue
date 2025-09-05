@@ -1,0 +1,126 @@
+import datetime
+from dataclasses import dataclass
+from typing import Optional
+
+@dataclass
+class SupportTicket:
+    """Class to represent a support ticket"""
+    subject: str
+    body: str
+    user_id: Optional[str] = None
+    created_at: datetime.datetime = None
+    priority: str = "medium"
+    status: str = "open"
+    
+    def __post_init__(self):
+        if self.created_at is None:
+            self.created_at = datetime.datetime.now()
+
+class LoginSupportHandler:
+    """Handler for login-related support issues"""
+    
+    def __init__(self):
+        self.tickets = []
+        self.login_keywords = [
+            "login", "log in", "sign in", "access", "account", 
+            "password", "authentication", "unable to login"
+        ]
+    
+    def create_ticket(self, subject: str, body: str, user_id: str = None) -> SupportTicket:
+        """Create a new support ticket"""
+        ticket = SupportTicket(
+            subject=subject,
+            body=body,
+            user_id=user_id,
+            priority=self.determine_priority(subject, body)
+        )
+        self.tickets.append(ticket)
+        return ticket
+    
+    def determine_priority(self, subject: str, body: str) -> str:
+        """Determine ticket priority based on content"""
+        text = f"{subject} {body}".lower()
+        
+        # High priority keywords
+        high_priority_keywords = ["urgent", "critical", "can't access", "locked out"]
+        if any(keyword in text for keyword in high_priority_keywords):
+            return "high"
+        
+        # Login issues are typically medium priority
+        if any(keyword in text for keyword in self.login_keywords):
+            return "medium"
+        
+        return "low"
+    
+    def generate_auto_response(self, ticket: SupportTicket) -> str:
+        """Generate an automatic response for login issues"""
+        if any(keyword in ticket.body.lower() for keyword in self.login_keywords):
+            return f"""
+Dear {ticket.user_id or 'User'},
+
+Thank you for contacting our support team regarding your login issue.
+
+We understand you're experiencing difficulties accessing your account. Here are some immediate steps you can try:
+
+1. **Password Reset**: Try resetting your password using the "Forgot Password" link on the login page
+2. **Clear Browser Cache**: Clear your browser cache and cookies, then try logging in again
+3. **Check Email**: Verify that you're using the correct email address associated with your account
+4. **Disable Browser Extensions**: Temporarily disable browser extensions that might interfere with login
+5. **Try Incognito/Private Mode**: Attempt to log in using an incognito or private browsing window
+
+If these steps don't resolve the issue, our technical team will investigate further and get back to you within 24 hours.
+
+Ticket ID: {len(self.tickets)}
+Priority: {ticket.priority.upper()}
+Created: {ticket.created_at.strftime('%Y-%m-%d %H:%M:%S')}
+
+Best regards,
+Technical Support Team
+            """
+        return "Thank you for your inquiry. Our team will review your request and respond shortly."
+    
+    def process_ticket(self, subject: str, body: str, user_id: str = None) -> dict:
+        """Process a complete support ticket"""
+        ticket = self.create_ticket(subject, body, user_id)
+        auto_response = self.generate_auto_response(ticket)
+        
+        return {
+            "ticket_id": len(self.tickets),
+            "ticket": ticket,
+            "auto_response": auto_response,
+            "next_steps": self._get_next_steps(ticket)
+        }
+    
+    def _get_next_steps(self, ticket: SupportTicket) -> list:
+        """Determine next steps for handling the ticket"""
+        steps = []
+        if ticket.priority == "high":
+            steps.append("Escalate to senior support immediately")
+        steps.extend([
+            "Send auto-response to user",
+            "Assign to technical support team",
+            "Schedule follow-up within 24 hours"
+        ])
+        return steps
+
+# Example usage with the provided ticket
+if __name__ == "__main__":
+    # Initialize the support handler
+    support_handler = LoginSupportHandler()
+    
+    # Process the login issue ticket
+    ticket_data = support_handler.process_ticket(
+        subject="Support needed for login issue",
+        body="Hi team, I am unable to log into my account since yesterday. Could you please help me resolve this issue?",
+        user_id="Y.Rajesh Reddy"
+    )
+    
+    print("=== SUPPORT TICKET PROCESSED ===")
+    print(f"Ticket ID: {ticket_data['ticket_id']}")
+    print(f"Priority: {ticket_data['ticket'].priority.upper()}")
+    print(f"Status: {ticket_data['ticket'].status.upper()}")
+    print("\n=== AUTO RESPONSE ===")
+    print(ticket_data['auto_response'])
+    print("\n=== NEXT STEPS ===")
+    for i, step in enumerate(ticket_data['next_steps'], 1):
+        print(f"{i}. {step}")
