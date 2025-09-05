@@ -1,0 +1,419 @@
+import java.util.*;
+import java.util.regex.Pattern;
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
+import java.security.SecureRandom;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+
+/**
+ * Account Verification System
+ * Handles user account creation, email verification, and login validation
+ * 
+ * @author Y.Rajesh Reddy
+ */
+public class AccountVerificationSystem {
+    
+    private Map<String, User> users;
+    private Map<String, VerificationToken> verificationTokens;
+    private static final int TOKEN_EXPIRY_HOURS = 24;
+    private static final int MAX_LOGIN_ATTEMPTS = 3;
+    
+    public AccountVerificationSystem() {
+        this.users = new HashMap<>();
+        this.verificationTokens = new HashMap<>();
+    }
+    
+    /**
+     * User class to store user information
+     */
+    public static class User {
+        private String email;
+        private String hashedPassword;
+        private boolean isVerified;
+        private boolean isActive;
+        private LocalDateTime createdAt;
+        private int loginAttempts;
+        private LocalDateTime lastLoginAttempt;
+        
+        public User(String email, String hashedPassword) {
+            this.email = email;
+            this.hashedPassword = hashedPassword;
+            this.isVerified = false;
+            this.isActive = true;
+            this.createdAt = LocalDateTime.now();
+            this.loginAttempts = 0;
+        }
+        
+        // Getters and setters
+        public String getEmail() { return email; }
+        public String getHashedPassword() { return hashedPassword; }
+        public boolean isVerified() { return isVerified; }
+        public void setVerified(boolean verified) { this.isVerified = verified; }
+        public boolean isActive() { return isActive; }
+        public void setActive(boolean active) { this.isActive = active; }
+        public int getLoginAttempts() { return loginAttempts; }
+        public void setLoginAttempts(int attempts) { this.loginAttempts = attempts; }
+        public LocalDateTime getLastLoginAttempt() { return lastLoginAttempt; }
+        public void setLastLoginAttempt(LocalDateTime time) { this.lastLoginAttempt = time; }
+    }
+    
+    /**
+     * Verification token class
+     */
+    public static class VerificationToken {
+        private String token;
+        private String email;
+        private LocalDateTime expiryTime;
+        
+        public VerificationToken(String email) {
+            this.email = email;
+            this.token = generateToken();
+            this.expiryTime = LocalDateTime.now().plusHours(TOKEN_EXPIRY_HOURS);
+        }
+        
+        private String generateToken() {
+            SecureRandom random = new SecureRandom();
+            byte[] bytes = new byte[32];
+            random.nextBytes(bytes);
+            return Base64.getEncoder().encodeToString(bytes);
+        }
+        
+        public boolean isExpired() {
+            return LocalDateTime.now().isAfter(expiryTime);
+        }
+        
+        // Getters
+        public String getToken() { return token; }
+        public String getEmail() { return email; }
+        public LocalDateTime getExpiryTime() { return expiryTime; }
+    }
+    
+    /**
+     * Register a new user account
+     */
+    public String registerUser(String email, String password) {
+        try {
+            // Validate email format
+            if (!isValidEmail(email)) {
+                return "Invalid email format";
+            }
+            
+            // Check if user already exists
+            if (users.containsKey(email)) {
+                return "User already exists";
+            }
+            
+            // Validate password strength
+            if (!isValidPassword(password)) {
+                return "Password must be at least 8 characters with uppercase, lowercase, number, and special character";
+            }
+            
+            // Hash password
+            String hashedPassword = hashPassword(password);
+            
+            // Create user
+            User user = new User(email, hashedPassword);
+            users.put(email, user);
+            
+            // Generate verification token
+            VerificationToken token = new VerificationToken(email);
+            verificationTokens.put(token.getToken(), token);
+            
+            // Simulate sending verification email
+            System.out.println("Verification email sent to: " + email);
+            System.out.println("Verification token: " + token.getToken());
+            
+            return "User registered successfully. Please check your email for verification.";
+            
+        } catch (Exception e) {
+            return "Registration failed: " + e.getMessage();
+        }
+    }
+    
+    /**
+     * Verify user account with token
+     */
+    public String verifyAccount(String token) {
+        VerificationToken verificationToken = verificationTokens.get(token);
+        
+        if (verificationToken == null) {
+            return "Invalid verification token";
+        }
+        
+        if (verificationToken.isExpired()) {
+            verificationTokens.remove(token);
+            return "Verification token has expired";
+        }
+        
+        User user = users.get(verificationToken.getEmail());
+        if (user == null) {
+            return "User not found";
+        }
+        
+        user.setVerified(true);
+        verificationTokens.remove(token);
+        
+        return "Account verified successfully";
+    }
+    
+    /**
+     * User login with email and password
+     */
+    public String login(String email, String password) {
+        User user = users.get(email);
+        
+        if (user == null) {
+            return "User not found";
+        }
+        
+        if (!user.isActive()) {
+            return "Account is suspended";
+        }
+        
+        if (!user.isVerified()) {
+            return "Please verify your account first";
+        }
+        
+        // Check for account lockout
+        if (isAccountLocked(user)) {
+            return "Account is temporarily locked due to multiple failed attempts";
+        }
+        
+        // Verify password
+        if (!verifyPassword(password, user.getHashedPassword())) {
+            user.setLoginAttempts(user.getLoginAttempts() + 1);
+            user.setLastLoginAttempt(LocalDateTime.now());
+            return "Invalid password. Attempts: " + user.getLoginAttempts() + "/" + MAX_LOGIN_ATTEMPTS;
+        }
+        
+        // Reset login attempts on successful login
+        user.setLoginAttempts(0);
+        user.setLastLoginAttempt(null);
+        
+        return "Login successful";
+    }
+    
+    /**
+     * Resend verification token
+     */
+    public String resendVerificationToken(String email) {
+        User user = users.get(email);
+        
+        if (user == null) {
+            return "User not found";
+        }
+        
+        if (user.isVerified()) {
+            return "Account is already verified";
+        }
+        
+        // Remove old tokens for this email
+        verificationTokens.entrySet().removeIf(entry -> 
+            entry.getValue().getEmail().equals(email));
+        
+        // Generate new token
+        VerificationToken token = new VerificationToken(email);
+        verificationTokens.put(token.getToken(), token);
+        
+        System.out.println("New verification token sent to: " + email);
+        System.out.println("Verification token: " + token.getToken());
+        
+        return "Verification token resent successfully";
+    }
+    
+    /**
+     * Reset password functionality
+     */
+    public String requestPasswordReset(String email) {
+        User user = users.get(email);
+        
+        if (user == null) {
+            return "User not found";
+        }
+        
+        VerificationToken resetToken = new VerificationToken(email);
+        verificationTokens.put(resetToken.getToken(), resetToken);
+        
+        System.out.println("Password reset token sent to: " + email);
+        System.out.println("Reset token: " + resetToken.getToken());
+        
+        return "Password reset instructions sent to your email";
+    }
+    
+    /**
+     * Reset password with token
+     */
+    public String resetPassword(String token, String newPassword) {
+        VerificationToken resetToken = verificationTokens.get(token);
+        
+        if (resetToken == null) {
+            return "Invalid reset token";
+        }
+        
+        if (resetToken.isExpired()) {
+            verificationTokens.remove(token);
+            return "Reset token has expired";
+        }
+        
+        if (!isValidPassword(newPassword)) {
+            return "Password must be at least 8 characters with uppercase, lowercase, number, and special character";
+        }
+        
+        User user = users.get(resetToken.getEmail());
+        if (user == null) {
+            return "User not found";
+        }
+        
+        user.hashedPassword = hashPassword(newPassword);
+        user.setLoginAttempts(0); // Reset login attempts
+        verificationTokens.remove(token);
+        
+        return "Password reset successfully";
+    }
+    
+    // Utility methods
+    private boolean isValidEmail(String email) {
+        String emailRegex = "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$";
+        return Pattern.matches(emailRegex, email);
+    }
+    
+    private boolean isValidPassword(String password) {
+        if (password.length() < 8) return false;
+        
+        boolean hasUpper = password.chars().anyMatch(Character::isUpperCase);
+        boolean hasLower = password.chars().anyMatch(Character::isLowerCase);
+        boolean hasDigit = password.chars().anyMatch(Character::isDigit);
+        boolean hasSpecial = password.chars().anyMatch(ch -> 
+            "!@#$%^&*()_+-=[]{}|;:,.<>?".indexOf(ch) >= 0);
+        
+        return hasUpper && hasLower && hasDigit && hasSpecial;
+    }
+    
+    private String hashPassword(String password) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] hash = md.digest(password.getBytes());
+            return Base64.getEncoder().encodeToString(hash);
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException("Error hashing password", e);
+        }
+    }
+    
+    private boolean verifyPassword(String password, String hashedPassword) {
+        return hashPassword(password).equals(hashedPassword);
+    }
+    
+    private boolean isAccountLocked(User user) {
+        if (user.getLoginAttempts() < MAX_LOGIN_ATTEMPTS) {
+            return false;
+        }
+        
+        if (user.getLastLoginAttempt() == null) {
+            return false;
+        }
+        
+        // Account is locked for 30 minutes after max attempts
+        long minutesSinceLastAttempt = ChronoUnit.MINUTES.between(
+            user.getLastLoginAttempt(), LocalDateTime.now());
+        
+        return minutesSinceLastAttempt < 30;
+    }
+    
+    // Admin functions
+    public void listAllUsers() {
+        System.out.println("\n=== All Users ===");
+        for (User user : users.values()) {
+            System.out.println("Email: " + user.getEmail() + 
+                             ", Verified: " + user.isVerified() + 
+                             ", Active: " + user.isActive());
+        }
+    }
+    
+    public void cleanupExpiredTokens() {
+        verificationTokens.entrySet().removeIf(entry -> entry.getValue().isExpired());
+        System.out.println("Expired tokens cleaned up");
+    }
+    
+    /**
+     * Demo/Test method
+     */
+    public static void main(String[] args) {
+        AccountVerificationSystem system = new AccountVerificationSystem();
+        Scanner scanner = new Scanner(System.in);
+        
+        System.out.println("=== Account Verification System ===");
+        
+        while (true) {
+            System.out.println("\nOptions:");
+            System.out.println("1. Register User");
+            System.out.println("2. Verify Account");
+            System.out.println("3. Login");
+            System.out.println("4. Resend Verification");
+            System.out.println("5. Request Password Reset");
+            System.out.println("6. Reset Password");
+            System.out.println("7. List All Users");
+            System.out.println("8. Exit");
+            System.out.print("Choose option: ");
+            
+            int choice = scanner.nextInt();
+            scanner.nextLine(); // consume newline
+            
+            switch (choice) {
+                case 1:
+                    System.out.print("Enter email: ");
+                    String email = scanner.nextLine();
+                    System.out.print("Enter password: ");
+                    String password = scanner.nextLine();
+                    System.out.println(system.registerUser(email, password));
+                    break;
+                    
+                case 2:
+                    System.out.print("Enter verification token: ");
+                    String token = scanner.nextLine();
+                    System.out.println(system.verifyAccount(token));
+                    break;
+                    
+                case 3:
+                    System.out.print("Enter email: ");
+                    String loginEmail = scanner.nextLine();
+                    System.out.print("Enter password: ");
+                    String loginPassword = scanner.nextLine();
+                    System.out.println(system.login(loginEmail, loginPassword));
+                    break;
+                    
+                case 4:
+                    System.out.print("Enter email: ");
+                    String resendEmail = scanner.nextLine();
+                    System.out.println(system.resendVerificationToken(resendEmail));
+                    break;
+                    
+                case 5:
+                    System.out.print("Enter email: ");
+                    String resetEmail = scanner.nextLine();
+                    System.out.println(system.requestPasswordReset(resetEmail));
+                    break;
+                    
+                case 6:
+                    System.out.print("Enter reset token: ");
+                    String resetToken = scanner.nextLine();
+                    System.out.print("Enter new password: ");
+                    String newPassword = scanner.nextLine();
+                    System.out.println(system.resetPassword(resetToken, newPassword));
+                    break;
+                    
+                case 7:
+                    system.listAllUsers();
+                    break;
+                    
+                case 8:
+                    System.out.println("Goodbye!");
+                    scanner.close();
+                    return;
+                    
+                default:
+                    System.out.println("Invalid option");
+            }
+        }
+    }
+}
