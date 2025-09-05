@@ -1,0 +1,185 @@
+
+import threading
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import socket
+import urllib.request
+
+class DowntimeRecoveryManager:
+    def __init__(self):
+        self.monitoring = False
+        self.alert_threshold = 3  # consecutive failures
+        self.check_interval = 60  # seconds
+        self.services_to_monitor = []
+        self.failure_counts = {}
+        self.alert_contacts = []
+        
+    def add_service(self, name: str, check_function, recovery_function=None):
+        """Add a service to monitor"""
+        self.services_to_monitor.append({
+            'name': name,
+            'check': check_function,
+            'recover': recovery_function
+        })
+        self.failure_counts[name] = 0
+    
+    def check_website_health(self, url: str) -> bool:
+        """Check if website is accessible"""
+        try:
+            response = urllib.request.urlopen(url, timeout=10)
+            return response.getcode() == 200
+        except:
+            return False
+    
+    def check_database_connection(self, connection_string: str) -> bool:
+        """Check database connectivity"""
+        try:
+            # This is a placeholder - implement actual DB connection
+            # For example, with PostgreSQL:
+            # import psycopg2
+            # conn = psycopg2.connect(connection_string)
+            # conn.close()
+            return True
+        except:
+            return False
+    
+    def check_service_port(self, host: str, port: int) -> bool:
+        """Check if service port is accessible"""
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(5)
+            result = sock.connect_ex((host, port))
+            sock.close()
+            return result == 0
+        except:
+            return False
+    
+    def restart_service(self, service_name: str) -> bool:
+        """Restart a system service"""
+        try:
+            subprocess.run(['systemctl', 'restart', service_name], 
+                          check=True, capture_output=True)
+            logging.info(f"Successfully restarted {service_name}")
+            return True
+        except subprocess.CalledProcessError as e:
+            logging.error(f"Failed to restart {service_name}: {e}")
+            return False
+    
+    def send_alert(self, subject: str, message: str):
+        """Send email alert"""
+        try:
+            # Configure your SMTP settings
+            smtp_server = "smtp.gmail.com"
+            smtp_port = 587
+            sender_email = "your-alert@email.com"
+            sender_password = "your-app-password"
+            
+            msg = MIMEMultipart()
+            msg['From'] = sender_email
+            msg['Subject'] = subject
+            msg.attach(MIMEText(message, 'plain'))
+            
+            server = smtplib.SMTP(smtp_server, smtp_port)
+            server.starttls()
+            server.login(sender_email, sender_password)
+            
+            for contact in self.alert_contacts:
+                msg['To'] = contact
+                server.send_message(msg)
+                del msg['To']
+            
+            server.quit()
+            logging.info("Alert sent successfully")
+        except Exception as e:
+            logging.error(f"Failed to send alert: {e}")
+    
+    def monitor_services(self):
+        """Main monitoring loop"""
+        self.monitoring = True
+        
+        while self.monitoring:
+            for service in self.services_to_monitor:
+                name = service['name']
+                
+                try:
+                    if service['check']():
+                        # Service is healthy
+                        if self.failure_counts[name] > 0:
+                            logging.info(f"Service {name} recovered")
+                            self.failure_counts[name] = 0
+                    else:
+                        # Service is down
+                        self.failure_counts[name] += 1
+                        logging.warning(f"Service {name} check failed ({self.failure_counts[name]} times)")
+                        
+                        if self.failure_counts[name] >= self.alert_threshold:
+                            # Try recovery if available
+                            if service['recover']:
+                                logging.info(f"Attempting recovery for {name}")
+                                if service['recover']():
+                                    self.failure_counts[name] = 0
+                                    continue
+                            
+                            # Send alert
+                            alert_msg = f"CRITICAL: Service {name} has been down for {self.failure_counts[name]} consecutive checks"
+                            self.send_alert(f"Service Down: {name}", alert_msg)
+                            
+                except Exception as e:
+                    logging.error(f"Error monitoring {name}: {e}")
+            
+            time.sleep(self.check_interval)
+    
+    def start_monitoring(self):
+        """Start monitoring in background thread"""
+        monitor_thread = threading.Thread(target=self.monitor_services, daemon=True)
+        monitor_thread.start()
+        logging.info("Monitoring started")
+    
+    def stop_monitoring(self):
+        """Stop monitoring"""
+        self.monitoring = False
+        logging.info("Monitoring stopped")
+    
+    def get_system_metrics(self) -> Dict[str, Any]:
+        """Get current system metrics"""
+        return {
+            'cpu_percent': psutil.cpu_percent(interval=1),
+            'memory_percent': psutil.virtual_memory().percent,
+            'disk_usage': psutil.disk_usage('/').percent,
+            'network_connections': len(psutil.net_connections()),
+            'uptime': time.time() - psutil.boot_time()
+        }
+
+# Example usage and configuration
+if __name__ == "__main__":
+    # Example 1: System Access Recovery
+    access_manager = SystemAccessManager()
+    
+    # Example 2: API Integration
+    api_manager = APIIntegrationManager(
+        base_url="https://api.yourservice.com",
+        api_key="your-api-key-here"
+    )
+    
+    # Example 3: Downtime Recovery
+    recovery_manager = DowntimeRecoveryManager()
+    
+    # Add services to monitor
+    recovery_manager.add_service(
+        "website",
+        lambda: recovery_manager.check_website_health("https://yourwebsite.com"),
+        lambda: recovery_manager.restart_service("nginx")
+    )
+    
+    recovery_manager.add_service(
+        "database",
+        lambda: recovery_manager.check_service_port("localhost", 5432),
+        lambda: recovery_manager.restart_service("postgresql")
+    )
+    
+    # Start monitoring
+    recovery_manager.alert_contacts = ["admin@yourcompany.com"]
+    recovery_manager.start_monitoring()
+    
+    print("All systems initialized and monitoring started!")
