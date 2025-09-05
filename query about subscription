@@ -1,0 +1,295 @@
+import smtplib
+import requests
+import time
+import threading
+from datetime import datetime, timedelta
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import logging
+import json
+import subprocess
+import psutil
+
+class CriticalIncidentHandler:
+    def __init__(self):
+        self.setup_logging()
+        self.incident_id = self.generate_incident_id()
+        self.escalation_contacts = [
+            "support-lead@company.com",
+            "infrastructure-team@company.com",
+            "management@company.com"
+        ]
+        self.monitoring_active = False
+        
+    def setup_logging(self):
+        """Set up critical incident logging"""
+        logging.basicConfig(
+            level=logging.CRITICAL,
+            format='%(asctime)s - CRITICAL - %(message)s',
+            handlers=[
+                logging.FileHandler('critical_incidents.log'),
+                logging.StreamHandler()
+            ]
+        )
+        self.logger = logging.getLogger(__name__)
+    
+    def generate_incident_id(self):
+        """Generate unique incident ID"""
+        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        return f"INC-{timestamp}"
+    
+    def send_critical_alert(self, recipients, incident_details):
+        """Send immediate critical alert to all stakeholders"""
+        try:
+            # Email configuration (replace with your SMTP settings)
+            smtp_server = "smtp.gmail.com"
+            smtp_port = 587
+            sender_email = "alerts@company.com"  # Replace with your email
+            sender_password = "your-app-password"  # Replace with your password
+            
+            msg = MIMEMultipart()
+            msg['From'] = sender_email
+            msg['To'] = ", ".join(recipients)
+            msg['Subject'] = f"🚨 CRITICAL: Server Downtime - {self.incident_id}"
+            
+            body = f"""
+            ⚠️ CRITICAL INCIDENT ALERT ⚠️
+            
+            Incident ID: {self.incident_id}
+            Severity: CRITICAL
+            Status: ACTIVE
+            Time Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+            
+            ISSUE DESCRIPTION:
+            {incident_details['description']}
+            
+            IMMEDIATE ACTIONS REQUIRED:
+            1. Infrastructure team to investigate server status
+            2. Check system logs and error reports
+            3. Implement emergency failover procedures if available
+            4. Prepare customer communication
+            
+            AFFECTED SERVICES:
+            - Primary application servers
+            - Database connectivity
+            - Customer-facing services
+            
+            NEXT UPDATE: Within 15 minutes
+            
+            This is an automated critical incident response.
+            Contact: Emergency Support Hotline
+            
+            --- INCIDENT RESPONSE TEAM ---
+            """
+            
+            msg.attach(MIMEText(body, 'plain'))
+            
+            with smtplib.SMTP(smtp_server, smtp_port) as server:
+                server.starttls()
+                server.login(sender_email, sender_password)
+                server.send_message(msg)
+            
+            self.logger.critical(f"Critical alert sent to {len(recipients)} recipients")
+            return True
+            
+        except Exception as e:
+            self.logger.critical(f"FAILED to send critical alert: {str(e)}")
+            return False
+    
+    def check_server_status(self, servers):
+        """Check status of critical servers"""
+        server_status = {}
+        
+        for server in servers:
+            try:
+                # Ping test
+                response = subprocess.run(['ping', '-c', '1', server['host']], 
+                                       capture_output=True, text=True, timeout=5)
+                ping_success = response.returncode == 0
+                
+                # HTTP/HTTPS check if applicable
+                http_status = None
+                if 'url' in server:
+                    try:
+                        http_response = requests.get(server['url'], timeout=5)
+                        http_status = http_response.status_code
+                    except:
+                        http_status = 'FAILED'
+                
+                server_status[server['name']] = {
+                    'ping': 'UP' if ping_success else 'DOWN',
+                    'http_status': http_status,
+                    'last_checked': datetime.now().strftime('%H:%M:%S')
+                }
+                
+            except Exception as e:
+                server_status[server['name']] = {
+                    'ping': 'ERROR',
+                    'http_status': 'ERROR',
+                    'error': str(e),
+                    'last_checked': datetime.now().strftime('%H:%M:%S')
+                }
+        
+        return server_status
+    
+    def get_system_resources(self):
+        """Get current system resource usage"""
+        return {
+            'cpu_percent': psutil.cpu_percent(interval=1),
+            'memory_percent': psutil.virtual_memory().percent,
+            'disk_usage': psutil.disk_usage('/').percent,
+            'load_average': psutil.getloadavg() if hasattr(psutil, 'getloadavg') else 'N/A'
+        }
+    
+    def start_continuous_monitoring(self, servers, check_interval=60):
+        """Start continuous monitoring of servers"""
+        self.monitoring_active = True
+        
+        def monitor():
+            while self.monitoring_active:
+                status = self.check_server_status(servers)
+                resources = self.get_system_resources()
+                
+                print(f"\n=== SERVER STATUS CHECK - {datetime.now().strftime('%H:%M:%S')} ===")
+                for server_name, server_info in status.items():
+                    print(f"{server_name}: {server_info}")
+                
+                print(f"System Resources: {resources}")
+                
+                # Check if any critical thresholds are exceeded
+                if resources['cpu_percent'] > 90 or resources['memory_percent'] > 90:
+                    self.logger.critical(f"System resources critical: CPU {resources['cpu_percent']}%, RAM {resources['memory_percent']}%")
+                
+                time.sleep(check_interval)
+        
+        monitoring_thread = threading.Thread(target=monitor)
+        monitoring_thread.daemon = True
+        monitoring_thread.start()
+        
+        print(f"Continuous monitoring started for incident {self.incident_id}")
+    
+    def create_incident_report(self, incident_details, server_status):
+        """Create detailed incident report"""
+        report = {
+            'incident_id': self.incident_id,
+            'timestamp': datetime.now().isoformat(),
+            'severity': 'CRITICAL',
+            'status': 'ACTIVE',
+            'description': incident_details['description'],
+            'affected_services': incident_details.get('affected_services', []),
+            'server_status': server_status,
+            'system_resources': self.get_system_resources(),
+            'estimated_impact': 'HIGH - Customer-facing services unavailable',
+            'escalation_level': 'LEVEL 3 - Executive notification required'
+        }
+        
+        # Save report to file
+        filename = f"incident_report_{self.incident_id}.json"
+        with open(filename, 'w') as f:
+            json.dump(report, f, indent=2)
+        
+        return report
+    
+    def execute_emergency_procedures(self):
+        """Execute predefined emergency procedures"""
+        procedures = [
+            "1. Notify all team leads immediately",
+            "2. Activate backup systems if available", 
+            "3. Check database connectivity and integrity",
+            "4. Review recent deployments and changes",
+            "5. Prepare customer communication",
+            "6. Document all actions taken",
+            "7. Establish war room for coordination"
+        ]
+        
+        print("\n🚨 EXECUTING EMERGENCY PROCEDURES:")
+        for procedure in procedures:
+            print(f"   {procedure}")
+        
+        return procedures
+
+def handle_critical_server_downtime():
+    """Handle the critical server downtime incident"""
+    
+    # Original support ticket details
+    subject = "General query about subscription"
+    body = "Our servers are down, and we need immediate support. This is highly critical."
+    
+    print("🚨" * 20)
+    print("CRITICAL INCIDENT DETECTED")
+    print("🚨" * 20)
+    print(f"Original Subject: {subject}")
+    print(f"Issue Description: {body}")
+    print(f"Severity Level: CRITICAL")
+    print(f"Time Detected: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    
+    # Initialize incident handler
+    incident_handler = CriticalIncidentHandler()
+    
+    # Define incident details
+    incident_details = {
+        'description': body,
+        'reported_by': 'Customer Support Ticket',
+        'severity': 'CRITICAL',
+        'affected_services': [
+            'Primary Application Servers',
+            'Database Services', 
+            'Customer Portal',
+            'API Services'
+        ]
+    }
+    
+    # Define servers to monitor (replace with your actual servers)
+    servers_to_check = [
+        {'name': 'Main App Server', 'host': 'app.yourcompany.com', 'url': 'https://app.yourcompany.com'},
+        {'name': 'Database Server', 'host': 'db.yourcompany.com'},
+        {'name': 'API Server', 'host': 'api.yourcompany.com', 'url': 'https://api.yourcompany.com/health'},
+        {'name': 'Load Balancer', 'host': 'lb.yourcompany.com'}
+    ]
+    
+    # Check current server status
+    print("\n📊 CHECKING SERVER STATUS...")
+    server_status = incident_handler.check_server_status(servers_to_check)
+    
+    # Create incident report
+    incident_report = incident_handler.create_incident_report(incident_details, server_status)
+    
+    # Send critical alerts
+    print("\n📧 SENDING CRITICAL ALERTS...")
+    alert_sent = incident_handler.send_critical_alert(
+        incident_handler.escalation_contacts,
+        incident_details
+    )
+    
+    if alert_sent:
+        print("✅ Critical alerts sent successfully")
+    else:
+        print("❌ Failed to send critical alerts - Manual notification required")
+    
+    # Execute emergency procedures
+    procedures = incident_handler.execute_emergency_procedures()
+    
+    # Start continuous monitoring
+    print(f"\n🔍 STARTING CONTINUOUS MONITORING...")
+    incident_handler.start_continuous_monitoring(servers_to_check, check_interval=30)
+    
+    # Display incident summary
+    print(f"\n📋 INCIDENT SUMMARY:")
+    print(f"Incident ID: {incident_handler.incident_id}")
+    print(f"Status: ACTIVE")
+    print(f"Next Update: {(datetime.now() + timedelta(minutes=15)).strftime('%H:%M:%S')}")
+    print(f"Report saved: incident_report_{incident_handler.incident_id}.json")
+    
+    # Keep monitoring active
+    try:
+        print("\n⏰ Monitoring active... Press Ctrl+C to stop")
+        while True:
+            time.sleep(10)
+            # In a real scenario, you might check for resolution conditions
+            
+    except KeyboardInterrupt:
+        incident_handler.monitoring_active = False
+        print(f"\n✅ Monitoring stopped for incident {incident_handler.incident_id}")
+
+if __name__ == "__main__":
+    handle_critical_server_downtime()
