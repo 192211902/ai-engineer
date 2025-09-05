@@ -1,0 +1,84 @@
+
+import os
+import time
+import logging
+from datetime import datetime, timedelta
+import subprocess
+import psutil
+
+class SystemAccessManager:
+    def __init__(self):
+        self.blocked_users = set()
+        self.access_attempts = {}
+        self.max_attempts = 3
+        self.lockout_duration = 300  # 5 minutes
+        
+        # Setup logging
+        logging.basicConfig(
+            filename='system_access.log',
+            level=logging.INFO,
+            format='%(asctime)s - %(levelname)s - %(message)s'
+        )
+    
+    def check_system_status(self):
+        """Check if system services are running"""
+        critical_services = ['sshd', 'systemd', 'networking']
+        status = {}
+        
+        for service in critical_services:
+            try:
+                result = subprocess.run(['systemctl', 'is-active', service], 
+                                      capture_output=True, text=True)
+                status[service] = result.stdout.strip()
+            except Exception as e:
+                status[service] = f"Error: {e}"
+                logging.error(f"Failed to check {service}: {e}")
+        
+        return status
+    
+    def emergency_access_restore(self, user_id, emergency_key):
+        """Emergency access restoration with verification"""
+        if emergency_key != "EMERGENCY_2024_RESTORE":
+            logging.warning(f"Invalid emergency key attempt by {user_id}")
+            return False
+        
+        if user_id in self.blocked_users:
+            self.blocked_users.remove(user_id)
+            logging.info(f"Emergency access restored for {user_id}")
+            return True
+        
+        return False
+    
+    def validate_access(self, user_id, password_hash):
+        """Validate user access with rate limiting"""
+        current_time = datetime.now()
+        
+        # Check if user is blocked
+        if user_id in self.blocked_users:
+            logging.warning(f"Blocked user {user_id} attempted access")
+            return False
+        
+        # Check rate limiting
+        if user_id in self.access_attempts:
+            attempts, last_attempt = self.access_attempts[user_id]
+            
+            if current_time - last_attempt < timedelta(seconds=self.lockout_duration):
+                if attempts >= self.max_attempts:
+                    self.blocked_users.add(user_id)
+                    logging.warning(f"User {user_id} blocked due to excessive attempts")
+                    return False
+        
+        # Simulate password validation (replace with actual auth)
+        if self._validate_credentials(user_id, password_hash):
+            self.access_attempts[user_id] = (0, current_time)
+            logging.info(f"Successful access for {user_id}")
+            return True
+        else:
+            attempts = self.access_attempts.get(user_id, (0, current_time))[0] + 1
+            self.access_attempts[user_id] = (attempts, current_time)
+            logging.warning(f"Failed access attempt {attempts} for {user_id}")
+            return False
+    
+    def _validate_credentials(self, user_id, password_hash):
+        # Implement actual credential validation
+        return True  # Placeholder
