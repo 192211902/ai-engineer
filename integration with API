@@ -1,0 +1,96 @@
+
+import requests
+import json
+import time
+from typing import Optional, Dict, Any
+from functools import wraps
+
+class APIIntegrationManager:
+    def __init__(self, base_url: str, api_key: str):
+        self.base_url = base_url.rstrip('/')
+        self.api_key = api_key
+        self.session = requests.Session()
+        self.session.headers.update({
+            'Authorization': f'Bearer {api_key}',
+            'Content-Type': 'application/json',
+            'User-Agent': 'AI-Engineer-Integration/1.0'
+        })
+        self.retry_attempts = 3
+        self.retry_delay = 1  # seconds
+    
+    def retry_on_failure(func):
+        """Decorator for automatic retry on API failures"""
+        @wraps(func)
+        def wrapper(self, *args, **kwargs):
+            for attempt in range(self.retry_attempts):
+                try:
+                    return func(self, *args, **kwargs)
+                except requests.RequestException as e:
+                    if attempt == self.retry_attempts - 1:
+                        logging.error(f"API call failed after {self.retry_attempts} attempts: {e}")
+                        raise
+                    time.sleep(self.retry_delay * (2 ** attempt))  # Exponential backoff
+            return None
+        return wrapper
+    
+    @retry_on_failure
+    def get_data(self, endpoint: str, params: Optional[Dict] = None) -> Dict[Any, Any]:
+        """GET request with error handling"""
+        url = f"{self.base_url}/{endpoint.lstrip('/')}"
+        response = self.session.get(url, params=params, timeout=30)
+        response.raise_for_status()
+        
+        logging.info(f"Successfully retrieved data from {endpoint}")
+        return response.json()
+    
+    @retry_on_failure
+    def post_data(self, endpoint: str, data: Dict[Any, Any]) -> Dict[Any, Any]:
+        """POST request with error handling"""
+        url = f"{self.base_url}/{endpoint.lstrip('/')}"
+        response = self.session.post(url, json=data, timeout=30)
+        response.raise_for_status()
+        
+        logging.info(f"Successfully posted data to {endpoint}")
+        return response.json()
+    
+    @retry_on_failure
+    def update_data(self, endpoint: str, data: Dict[Any, Any]) -> Dict[Any, Any]:
+        """PUT request with error handling"""
+        url = f"{self.base_url}/{endpoint.lstrip('/')}"
+        response = self.session.put(url, json=data, timeout=30)
+        response.raise_for_status()
+        
+        logging.info(f"Successfully updated data at {endpoint}")
+        return response.json()
+    
+    def batch_operations(self, operations: list) -> list:
+        """Execute multiple API operations in batch"""
+        results = []
+        for operation in operations:
+            try:
+                method = operation.get('method', 'GET').upper()
+                endpoint = operation['endpoint']
+                data = operation.get('data', {})
+                
+                if method == 'GET':
+                    result = self.get_data(endpoint, data)
+                elif method == 'POST':
+                    result = self.post_data(endpoint, data)
+                elif method == 'PUT':
+                    result = self.update_data(endpoint, data)
+                else:
+                    raise ValueError(f"Unsupported method: {method}")
+                
+                results.append({'status': 'success', 'data': result})
+            except Exception as e:
+                results.append({'status': 'error', 'error': str(e)})
+        
+        return results
+    
+    def health_check(self) -> bool:
+        """Check API health status"""
+        try:
+            response = self.session.get(f"{self.base_url}/health", timeout=10)
+            return response.status_code == 200
+        except:
+            return False
